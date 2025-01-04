@@ -16,9 +16,10 @@
  * String structure
  */
 typedef struct {
-    char*  data;  // Pointer to character buffer
-    size_t len;   // Current length (excluding '\0')
-    size_t cap;   // Allocated capacity (including '\0')
+    char*  data;        // Pointer to character buffer
+    size_t len_bytes;   // Current length in bytes (excluding '\0')
+    size_t len_utf8;    // Current length in UTF-8 code points
+    size_t cap;         // Allocated capacity (including '\0')
 } String;
 
 /*
@@ -47,14 +48,11 @@ bool str_preflight_utf8(String* s);
 
 /*
  * BOM-related
- *  - str_remove_utf8_bom: if BOM (0xEF, 0xBB, 0xBF) is detected at the start,
- *    remove it in-place.
  */
 bool str_remove_utf8_bom(String* s);
 
 /*
- * Utility for line-endings normalization (CRLF / LF):
- *  - str_strip_crlf: remove trailing '\r' and/or '\n'
+ * CRLF / LF handling
  */
 void str_strip_crlf(String* s);
 

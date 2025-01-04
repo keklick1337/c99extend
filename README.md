@@ -1,11 +1,12 @@
 # c99extend
 
-**Extend library for C99 programming language**  
+**Extended library for the C99 programming language**  
 Author: [Vladislav Tislenko aka keklick1337](https://github.com/keklick1337)  
 Year: 2025  
 
-This repository provides an extended UTF-8 string library in pure C99. It includes functionality for:
-- Managing dynamic strings with length and capacity tracking.
+This repository provides an **extended UTF-8 string library** (just for now) in pure C99. It includes functionality for:
+
+- Managing dynamic strings with **byte length** (`len_bytes`) and **UTF-8 codepoint count** (`len_utf8`).
 - Validating and handling UTF-8 data (including BOM detection and removal).
 - Normalizing line endings (CRLF vs. LF).
 - Basic string operations: concatenation, summation, push-back, etc.
@@ -15,23 +16,31 @@ This repository provides an extended UTF-8 string library in pure C99. It includ
 ## Features Overview
 
 1. **`String` structure**  
-   - Stores a character buffer (`data`), current length (`len`), and capacity (`cap`).
+   - `data`: A dynamically allocated character buffer.  
+   - `len_bytes`: The current number of bytes (excluding the terminator `'\0'`).  
+   - `len_utf8`: The current number of UTF-8 codepoints.  
+   - `cap`: The total allocated capacity (including space for `'\0'`).  
 
-2. **UTF-8 validation**  
-   - Ensures strings contain valid UTF-8 sequences per [RFC 3629](https://datatracker.ietf.org/doc/html/rfc3629), detecting invalid bytes, overlong encodings, surrogates, etc.
+2. **Automatic tracking of `len_bytes` and `len_utf8`**  
+   - Whenever you modify the string (pushing a character, concatenating, removing BOM, etc.), both byte length and codepoint count are updated.  
+   - This allows you to handle ASCII and multilingual UTF-8 data accurately.  
 
-3. **BOM (Byte Order Mark) support**  
-   - Automatically removes the UTF-8 BOM (`0xEF 0xBB 0xBF`) if present.
+3. **UTF-8 validation**  
+   - Ensures strings contain valid UTF-8 sequences per [RFC 3629](https://datatracker.ietf.org/doc/html/rfc3629), detecting invalid bytes, overlong encodings, surrogates, etc.  
+   - Includes functions like `str_preflight_utf8()` to check and optionally fix (or clear) invalid data.  
 
-4. **CRLF / LF normalization**  
-   - Strips trailing `\r` and/or `\n` from the end of a string.
+4. **BOM (Byte Order Mark) support**  
+   - Automatically detects and removes the UTF-8 BOM (`0xEF 0xBB 0xBF`) if present at the start.  
 
-5. **Basic operations**  
-   - Create from C-string  
-   - Free and reallocate  
-   - Push back a single character  
-   - Concatenate strings (in-place or return a new one)  
-   - Retrieve `const char*` for printing (`printf("%s", str_data(...))`)  
+5. **CRLF / LF normalization**  
+   - Strips trailing `\r` and/or `\n` from the end of a string.  
+
+6. **Basic operations**  
+   - Create a string from a C-string literal.  
+   - Free and reallocate as needed.  
+   - Push back a single character (ASCII or extended).  
+   - Concatenate strings in-place or return a new summed string.  
+   - Retrieve `const char*` (e.g., for `printf("%s", str_data(&myString));`).  
 
 ---
 
@@ -84,47 +93,56 @@ c99extend/
    ./string_utf8_test
    ```
    This will demonstrate various scenarios:
-   - Basic string concatenation  
-   - UTF-8 validation (valid vs. invalid)  
-   - BOM removal  
-   - CRLF stripping  
-   - Reading from `test_files/test_utf8_bom.txt` and `test_files/test_utf8_nobom.txt`
+   - Basic string concatenation (including ASCII examples).  
+   - UTF-8 validation (valid vs. invalid data).  
+   - BOM removal (if present).  
+   - CRLF stripping from lines.  
+   - Reading and validating UTF-8 lines from `test_files/test_utf8_bom.txt` and `test_files/test_utf8_nobom.txt`.  
+   - Displaying both the byte length and the codepoint length for each string.
 
 5. **Clean up**  
    ```bash
    make clean
    ```
-   Removes compiled objects, library archives, and the test executable.
+   Removes compiled objects, the static library, and the test executable.
 
 ---
 
 ## Usage in Your Own Project
 
-1. Copy `string_utf8.h` and `string_utf8.c` into your project, or build the static library and link against it.
-2. Include the header in your source:
+1. **Copy** `string_utf8.h` and `string_utf8.c` into your project, or build the static library and link to it.  
+2. **Include** the header in your source:
    ```c
    #include "string_utf8.h"
 
    int main(void) {
+       // Create a String from a C-string
        String s = str_from_cstr("Hello, World!");
+       
+       // Check if it's valid UTF-8 (it is, for ASCII)
        if (str_preflight_utf8(&s)) {
-           printf("Valid UTF-8: %s\n", str_data(&s));
+           // Print both byte length and codepoint count
+           printf("Valid UTF-8: '%s'\n", str_data(&s));
+           printf("Bytes = %zu, Codepoints = %zu\n", s.len_bytes, s.len_utf8);
        }
        str_free(&s);
        return 0;
    }
    ```
-3. Compile and link:
+
+3. **Compile and link**:
    ```bash
    gcc -std=c99 main.c string_utf8.c -o my_app
    ./my_app
    ```
+   - This approach directly includes the `.c` file.  
 
-Or, if using the static library:
+Or, if you built the **static library**:
    ```bash
    gcc -std=c99 main.c -L. -lstring_utf8 -o my_app
    ./my_app
    ```
+   - Make sure the library file (e.g., `libstring_utf8.a`) is in the same folder or a known library path.
 
 ---
 
@@ -137,8 +155,8 @@ You are free to use, modify, and distribute this software under the conditions d
 
 ## Author & Credits
 
-- **Author**: Vladislav Tislenko aka **keklick1337**  
+- **Author**: Vladislav Tislenko (keklick1337)  
 - **Year**: 2025  
-- **Description**: Extended UTF-8 library for C99, providing additional features often needed in modern string handling, such as BOM removal, validation, and improved memory management.
+- **Description**: Extended UTF-8 library for C99, providing additional features often needed for modern string handling, such as BOM removal, UTF-8 validation, codepoint counting, and improved memory management.
 
 **Enjoy coding with extended C99 strings!**
