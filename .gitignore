@@ -1,0 +1,4 @@
+Makefile
+*.a
+*.o
+string_utf8_test
