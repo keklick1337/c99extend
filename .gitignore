@@ -3,3 +3,4 @@ Makefile
 *.o
 string_utf8_test
 .vscode
+queue_test
