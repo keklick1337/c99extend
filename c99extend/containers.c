@@ -12,6 +12,7 @@
  */
 
 #include "containers.h"
+#include "string_utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -156,7 +157,7 @@ bool ht_insert(HashTable* ht, const char* key, void* value) {
         size_t probe = (idx + i) % ht->capacity;
         if (!ht->slots[probe].in_use) {
             /* insert */
-            char* dup = strdup(key);
+            char* dup = adv_strdup(key);
             if (!dup) return false;
             ht->slots[probe].key = dup;
             ht->slots[probe].value = value;
