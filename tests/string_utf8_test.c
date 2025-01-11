@@ -4,7 +4,6 @@
  *
  * Test code for the string_utf8 library in C99.
  * Demonstrates reading, validation, BOM handling, CRLF stripping, etc.
- * All comments are in English.
  */
 
 #include <stdio.h>
@@ -112,6 +111,7 @@ int main(void) {
      * 3. Reading UTF-8 from stdin
      *    (the user can type e.g. "你好" + Enter or any other UTF-8 text)
      */
+    /*
     printf("Enter some UTF-8 text: ");
     fflush(stdout);
 
@@ -136,6 +136,7 @@ int main(void) {
         }
         str_free(&from_stdin);
     }
+    */
 
     /*
      * 4. Reading from files (test_utf8_nobom.txt and test_utf8_bom.txt)

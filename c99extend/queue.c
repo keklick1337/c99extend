@@ -2,38 +2,71 @@
  * by Vladislav Tislenko aka keklick1337 (2025)
  * queue.c
  *
- * Implementation of a FIFO queue in C99 with thread-safe operations.
+ * Implementation of a FIFO queue in C99 with cross-platform "thread-safe" usage.
+ * We use 1 binary semaphore as a mutex, and 1 counting semaphore for items.
  */
 
 #include "queue.h"
+#include "adv_semaphore.h"
 #include <stdlib.h>
 
 /*
- * Creates an empty queue.
+ * We define a simple wrapper to represent "Mutex" as a binary semaphore.
  */
+typedef struct {
+    Semaphore sem;
+} Mutex;
+
+/*
+ * Creates a binary semaphore with initial_count=1 => acts like a mutex
+ */
+static void mutex_init(Mutex* m) {
+    // We ignore max_count or pass 1
+    Semaphore_init(&m->sem, 1, 1);
+}
+static void mutex_destroy(Mutex* m) {
+    Semaphore_destroy(&m->sem);
+}
+static void mutex_lock(Mutex* m) {
+    Semaphore_wait(&m->sem);
+}
+static void mutex_unlock(Mutex* m) {
+    Semaphore_post(&m->sem);
+}
+
 Queue* queue_create(void) {
     Queue* q = (Queue*)malloc(sizeof(Queue));
-    if (!q) {
-        return NULL; // Failed to allocate memory
-    }
+    if (!q) return NULL;
     q->head = NULL;
     q->tail = NULL;
     q->size = 0;
 
-    pthread_mutex_init(&q->mutex, NULL);
-    pthread_cond_init(&q->cond, NULL);
+    // allocate the Mutex and counting Semaphore
+    Mutex* m = (Mutex*)malloc(sizeof(Mutex));
+    if (!m) {
+        free(q);
+        return NULL;
+    }
+    mutex_init(m);
+    q->mutex = m;
+
+    Semaphore* item_sem = (Semaphore*)malloc(sizeof(Semaphore));
+    if (!item_sem) {
+        mutex_destroy(m);
+        free(m);
+        free(q);
+        return NULL;
+    }
+    // Counting semaphore, starts with 0 => no items
+    Semaphore_init(item_sem, 0, 9999999); // large max
+    q->items = item_sem;
 
     return q;
 }
 
-/*
- * Destroys the queue, freeing all nodes.
- * User data must be freed separately if needed.
- */
 void queue_destroy(Queue* q) {
     if (!q) return;
-
-    // Free all nodes
+    // free all nodes
     QueueNode* current = q->head;
     while (current) {
         QueueNode* temp = current;
@@ -41,99 +74,86 @@ void queue_destroy(Queue* q) {
         free(temp);
     }
 
-    // Destroy synchronization primitives
-    pthread_mutex_destroy(&q->mutex);
-    pthread_cond_destroy(&q->cond);
-
+    // destroy semaphores
+    if (q->items) {
+        Semaphore* s = (Semaphore*)q->items;
+        Semaphore_destroy(s);
+        free(s);
+    }
+    if (q->mutex) {
+        Mutex* m = (Mutex*)q->mutex;
+        mutex_destroy(m);
+        free(m);
+    }
     free(q);
 }
 
-/*
- * Pushes a new element to the tail of the queue.
- */
 void queue_push(Queue* q, void* data) {
     if (!q) return;
-
+    // create a new node
     QueueNode* node = (QueueNode*)malloc(sizeof(QueueNode));
-    if (!node) {
-        // Failed to allocate a new node
-        return;
-    }
+    if (!node) return;
     node->data = data;
     node->next = NULL;
 
-    pthread_mutex_lock(&q->mutex);
+    // lock
+    Mutex* m = (Mutex*)q->mutex;
+    mutex_lock(m);
 
     if (!q->tail) {
-        // Empty queue: new node is head and tail
         q->head = node;
         q->tail = node;
     } else {
-        // Non-empty queue: insert at tail
         q->tail->next = node;
         q->tail = node;
     }
     q->size++;
 
-    // Notify one waiting thread that a new element is available
-    pthread_cond_signal(&q->cond);
+    mutex_unlock(m);
 
-    pthread_mutex_unlock(&q->mutex);
+    // signal that we have 1 more item
+    Semaphore* s = (Semaphore*)q->items;
+    Semaphore_post(s);
 }
 
-/*
- * Pops an element from the head of the queue.
- * If the queue is empty, it blocks until a new element is pushed.
- */
 void* queue_pop(Queue* q) {
     if (!q) return NULL;
+    // wait for an item to appear
+    Semaphore* s = (Semaphore*)q->items;
+    Semaphore_wait(s);
 
-    pthread_mutex_lock(&q->mutex);
+    // lock
+    Mutex* m = (Mutex*)q->mutex;
+    mutex_lock(m);
 
-    // Wait until the queue is not empty
-    while (q->size == 0) {
-        pthread_cond_wait(&q->cond, &q->mutex);
-    }
-
-    // Remove the head node
     QueueNode* node = q->head;
     void* data = node->data;
-
     q->head = node->next;
     if (!q->head) {
-        // Queue became empty
         q->tail = NULL;
     }
     q->size--;
 
     free(node);
+    mutex_unlock(m);
 
-    pthread_mutex_unlock(&q->mutex);
     return data;
 }
 
-/*
- * Returns true if the queue is empty (non-blocking check).
- */
 bool queue_is_empty(Queue* q) {
     if (!q) return true;
-
-    pthread_mutex_lock(&q->mutex);
+    Mutex* m = (Mutex*)q->mutex;
+    mutex_lock(m);
     bool empty = (q->size == 0);
-    pthread_mutex_unlock(&q->mutex);
-
+    mutex_unlock(m);
     return empty;
 }
 
-/*
- * Returns the current size of the queue (non-blocking check).
- */
 size_t queue_size(Queue* q) {
     if (!q) return 0;
-
-    pthread_mutex_lock(&q->mutex);
+    Mutex* m = (Mutex*)q->mutex;
+    mutex_lock(m);
     size_t s = q->size;
-    pthread_mutex_unlock(&q->mutex);
-
+    mutex_unlock(m);
     return s;
 }

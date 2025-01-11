@@ -4,8 +4,9 @@
 # This script detects a suitable compiler (clang or gcc) and
 # generates a Makefile for building:
 #   - A single static library: libc99extend.a
-#   - Tests: queue_test, string_utf8_test
-# in strict C99 mode with maximum warnings.
+#   - Tests: queue_test, string_utf8_test, thread_pool_test, test_main, containers_test
+#     (unless excluded).
+# in strict C99 mode with maximum warnings and pthread support (if needed).
 #
 # Usage:
 #   ./configure [options]
@@ -20,6 +21,9 @@
 # Available tests for exclusion:
 #   - queue_test
 #   - string_utf8_test
+#   - thread_pool_test
+#   - test_main
+#   - containers_test
 #
 # Example usage:
 #   ./configure
@@ -30,7 +34,6 @@
 #
 #   ./configure --exclude-tests queue_test,string_utf8_test
 #       -> Build only the library (no tests).
-#
 
 echo "Running configure script..."
 
@@ -50,7 +53,7 @@ while [ $# -gt 0 ]; do
             echo "  --exclude-tests <test1,test2,...>  Exclude specific tests from the build"
             echo "  --help                             Show this help and exit"
             echo ""
-            echo "Available tests for exclusion: queue_test, string_utf8_test"
+            echo "Available tests for exclusion: queue_test, string_utf8_test, thread_pool_test, test_main, containers_test"
             exit 0
             ;;
         *)
@@ -78,19 +81,26 @@ fi
 # ---------------------------------------------------------
 # Strict C99 with maximum warnings
 # ---------------------------------------------------------
-CFLAGS="-Wall -Wextra -Werror -pedantic -std=c99 -O2"
+CFLAGS="-Wall -Wextra -Werror -pedantic -std=c99 -O2 -pthread"
 
 # ---------------------------------------------------------
-# Single library: libc99extend.a
-# Object files: queue.o, string_utf8.o
+# We'll scan the ./c99extend folder for .c files
+# and build them into one static library: libc99extend.a
 # ---------------------------------------------------------
+SRC_DIR="./c99extend"
 LIB_NAME="libc99extend.a"
-LIB_OBJECTS="queue.o string_utf8.o"
+
+ALL_SOURCES=$(find "$SRC_DIR" -maxdepth 1 -type f -name "*.c" 2>/dev/null)
+LIB_OBJECTS=""
+for srcfile in $ALL_SOURCES; do
+    objfile=$(basename "$srcfile" .c).o
+    LIB_OBJECTS="$LIB_OBJECTS $objfile"
+done
 
 # ---------------------------------------------------------
-# Tests available
+# Define tests available
 # ---------------------------------------------------------
-ALL_TESTS="queue_test string_utf8_test"
+ALL_TESTS="queue_test string_utf8_test thread_pool_test test_main containers_test"
 
 # Convert comma-separated excludes into an array
 IFS=',' read -r -a EXCLUDE_ARRAY <<< "$EXCLUDE_TESTS_LIST"
@@ -111,10 +121,10 @@ for T in $ALL_TESTS; do
 done
 
 # ---------------------------------------------------------
-# Directories for source and tests (adjust if needed)
+# Directories for tests
 # ---------------------------------------------------------
-SRC_DIR="./c99extend"
 TESTS_DIR="./tests"
+TESTBIN_DIR="testbin"
 
 # ---------------------------------------------------------
 # Generate Makefile
@@ -125,8 +135,11 @@ cat << EOF > Makefile
 # by Vladislav Tislenko aka keklick1337 (2025)
 #
 # This Makefile builds:
-#   - libc99extend.a (from queue.o + string_utf8.o)
-#   - Tests: queue_test, string_utf8_test (unless excluded)
+#   - ${LIB_NAME} (from all .c in c99extend folder)
+#   - Tests: queue_test, string_utf8_test, thread_pool_test, test_main, containers_test (unless excluded)
+#   - Places test binaries in the folder: ${TESTBIN_DIR}
+#
+# You can exclude tests via --exclude-tests param.
 # ---------------------------------------------------------
 
 CC = $CC
@@ -135,13 +148,14 @@ CFLAGS = $CFLAGS
 AR = ar
 RANLIB = ranlib
 
-LIB_NAME = $LIB_NAME
-LIB_OBJECTS = $LIB_OBJECTS
+LIB_NAME = ${LIB_NAME}
+LIB_OBJECTS = ${LIB_OBJECTS}
 
-TESTS = $SHOULD_BUILD_TESTS
+TESTS = ${SHOULD_BUILD_TESTS}
 
-SRC_DIR = $SRC_DIR
-TESTS_DIR = $TESTS_DIR
+SRC_DIR = ${SRC_DIR}
+TESTS_DIR = ${TESTS_DIR}
+TESTBIN_DIR = ${TESTBIN_DIR}
 
 .PHONY: all library tests clean run
 
@@ -155,56 +169,64 @@ library: \$(LIB_NAME)
 	\$(AR) rcs \$@ \$^
 	\$(RANLIB) \$@
 
-# Compile object files
-queue.o: \$(SRC_DIR)/queue.c \$(SRC_DIR)/queue.h
-	\$(CC) \$(CFLAGS) -c \$< -o \$@
+EOF
 
-string_utf8.o: \$(SRC_DIR)/string_utf8.c \$(SRC_DIR)/string_utf8.h
-	\$(CC) \$(CFLAGS) -c \$< -o \$@
+# Add compile rules for each .c in c99extend
+for srcfile in $ALL_SOURCES; do
+    base=$(basename "$srcfile" .c)
+    cat << EOF >> Makefile
+$base.o: \$(SRC_DIR)/$base.c
+	\$(CC) \$(CFLAGS) -c \$(SRC_DIR)/$base.c -o $base.o
 
-tests:
-ifneq (\$(strip \$(TESTS)),)
+EOF
+done
+
+cat << 'EOF' >> Makefile
+$(TESTBIN_DIR):
+	mkdir -p $(TESTBIN_DIR)
 EOF
 
 # Append commands for each test we want to build
 for T in $SHOULD_BUILD_TESTS; do
-    case "$T" in
-        queue_test)
-            # Build queue_test by linking with libc99extend.a
-            echo "	\$(CC) \$(CFLAGS) -I\$(SRC_DIR) \$(TESTS_DIR)/queue_test.c \$(LIB_NAME) -o queue_test"
-            ;;
-        string_utf8_test)
-            # Build string_utf8_test by linking with libc99extend.a
-            echo "	\$(CC) \$(CFLAGS) -I\$(SRC_DIR) \$(TESTS_DIR)/string_utf8_test.c \$(LIB_NAME) -o string_utf8_test"
-            ;;
-    esac
-done >> Makefile
-
-# Close the ifneq block
-cat << 'EOF' >> Makefile
-else
-	@echo "No tests to build (all tests are excluded)."
+    cat << EOF >> Makefile
+ifneq (\$(strip \$(TESTS)),)
+\$(TESTBIN_DIR)/$T: \$(TESTS_DIR)/$T.c \$(LIB_NAME) | \$(TESTBIN_DIR)
+	\$(CC) \$(CFLAGS) -I\$(SRC_DIR) \$(TESTS_DIR)/$T.c \$(LIB_NAME) -o \$(TESTBIN_DIR)/$T
+tests: \$(TESTBIN_DIR)/$T
 endif
+
+EOF
+done
+
+cat << 'EOF' >> Makefile
 
 run:
 ifneq ($(strip $(TESTS)),)
 	@echo "Running tests..."
-	@if [ -f queue_test ]; then ./queue_test; else echo "queue_test not built or excluded."; fi
+	@if [ -f $(TESTBIN_DIR)/queue_test ]; then ./$(TESTBIN_DIR)/queue_test; else echo "$(TESTBIN_DIR)/queue_test not built or excluded."; fi
 	@echo
-	@if [ -f string_utf8_test ]; then ./string_utf8_test; else echo "string_utf8_test not built or excluded."; fi
+	@if [ -f $(TESTBIN_DIR)/string_utf8_test ]; then ./$(TESTBIN_DIR)/string_utf8_test; else echo "$(TESTBIN_DIR)/string_utf8_test not built or excluded."; fi
+	@echo
+	@if [ -f $(TESTBIN_DIR)/thread_pool_test ]; then ./$(TESTBIN_DIR)/thread_pool_test; else echo "$(TESTBIN_DIR)/thread_pool_test not built or excluded."; fi
+	@echo
+	@if [ -f $(TESTBIN_DIR)/test_main ]; then ./$(TESTBIN_DIR)/test_main; else echo "$(TESTBIN_DIR)/test_main not built or excluded."; fi
+	@echo
+	@if [ -f $(TESTBIN_DIR)/containers_test ]; then ./$(TESTBIN_DIR)/containers_test; else echo "$(TESTBIN_DIR)/containers_test not built or excluded."; fi
+
 else
 	@echo "No tests to run (all tests are excluded)."
 endif
 
 clean:
-	rm -f *.o *.a queue_test string_utf8_test
+	rm -f *.o *.a
+	rm -rf $(TESTBIN_DIR)
 	rm -f Makefile
 EOF
 
 echo "Makefile has been created successfully."
 echo "You can now run one of the following commands:"
 echo "  make          - build the library and all non-excluded tests"
-echo "  make library  - build only the library (libc99extend.a)"
+echo "  make library  - build only the library (${LIB_NAME})"
 echo "  make tests    - build tests (if not excluded)"
 echo "  make run      - run the tests (if any built)"
 echo "  make clean    - remove generated files (including the Makefile)"

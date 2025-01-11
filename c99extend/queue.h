@@ -3,7 +3,7 @@
  * queue.h
  *
  * Header file for a simple FIFO queue in C99.
- * Provides basic operations and thread-safe usage via pthreads.
+ * Provides basic operations and thread-safe usage (now cross-platform).
  */
 
 #ifndef K_QUEUE_H
@@ -11,7 +11,6 @@
 
 #include <stddef.h>     // size_t
 #include <stdbool.h>    // bool
-#include <pthread.h>    // pthread_* for thread-safety
 
 /*
  * Queue node structure
@@ -25,13 +24,27 @@ typedef struct QueueNode {
  * Main queue structure
  */
 typedef struct {
-    QueueNode*    head;   // Pointer to the head of the queue
-    QueueNode*    tail;   // Pointer to the tail of the queue
-    size_t        size;   // Current number of elements in the queue
+    QueueNode*  head;   // Pointer to the head of the queue
+    QueueNode*  tail;   // Pointer to the tail of the queue
+    size_t      size;   // Current number of elements
 
-    // Thread-safety fields
-    pthread_mutex_t mutex; // Mutex for synchronization
-    pthread_cond_t  cond;  // Condition variable to wait/notify
+    // Instead of pthread_mutex_t, use our cross-platform approach:
+    // We'll do an adv_semaphore for usage or a small "Mutex" type.
+    // For simplicity, let's do a binary semaphore as a mutex:
+    // We'll do a counting semaphore of 1 => a "mutex"
+    // And another semaphore for "items" if we want blocking pop.
+    
+    // "mutex" protects the queue structure
+    // "items" is signaled when new items are available
+    // "space" could also be used if we had a limit, but we skip that for now.
+
+    // We'll just use 1 "mutex" + 1 "items".
+    // For cross-platform "mutex", we can do adv_semaphore or a custom "adv_mutex".
+    // Let's do a binary sem for the queue lock, and a counting sem for items.
+    
+    // For demonstration, we do:
+    void* mutex;  // We'll store a pointer to a "binary semaphore" or "adv_mutex"
+    void* items;  // a counting semaphore for number of items
 } Queue;
 
 /*

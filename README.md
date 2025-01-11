@@ -1,25 +1,53 @@
 # c99extend
 
-**Extended C99 Library (Queues + UTF-8 Strings)**  
+**Extended C99 Library (Threads, Queues, UTF-8 Strings, Containers)**  
 Author: [Vladislav Tislenko aka keklick1337](https://github.com/keklick1337)  
 Year: 2025  
 
-This repository provides an **extended C99 library** that offers both a **thread-safe queue** implementation and an **enhanced UTF-8 string** library. Written in pure C99, it aims to simplify common data-structure management and provide reliable UTF-8 handling.  
+[![Open Documentation](https://img.shields.io/badge/Click%20for%20DOC-Reference-orange)](DOC.md)
+
+This repository provides an **extended C99 library** that offers:
+
+- **Thread Pool and Thread Abstraction** (using `adv_thread.h` / `thread_pool.h`)
+- **Semaphore** (cross-platform, in `adv_semaphore.h`)
+- **Thread-safe Queue** (`queue.h` / `queue.c`)
+- **Enhanced UTF-8 String** library (`string_utf8.h` / `string_utf8.c`)
+- **Miscellaneous Data Structures** (`containers.h` / `containers.c`):
+  - Dynamic Array
+  - Hash Table
+  - Red-Black Tree
+  - Generic HashSet  
+
+Everything is written in pure C99, aiming to simplify common data-structure management, reliable UTF-8 handling, and cross-platform threading primitives.
 
 ---
 
 ## What’s Included
 
-1. **Queues (queue.c / queue.h)**  
-   - Thread-safe FIFO queue implementation.  
-   - Supports multiple producers and consumers.  
-   - Simple to integrate: create, push data, pop data, and destroy.  
+1. **Thread Abstractions (`adv_thread.h`)**  
+   - Cross-platform `Thread` (Windows `_WIN32` or POSIX).  
+   - Provides `thread_create`, `thread_join`, `Thread_kill`, etc.
 
-2. **UTF-8 Strings (string_utf8.c / string_utf8.h)**  
-   - Dynamic string management with byte-length (`len_bytes`) and UTF-8 codepoint count (`len_utf8`).  
-   - Validation for proper UTF-8 (detects invalid bytes, overlong encodings, etc.).  
-   - BOM detection and removal.  
-   - CRLF stripping and other basic operations (push-back, concatenation, etc.).  
+2. **Thread Pool (`thread_pool.h`)**  
+   - Worker threads managed internally.  
+   - Simple API: create pool, submit tasks, destroy when done.  
+
+3. **Semaphore (`adv_semaphore.h`)**  
+   - Cross-platform: uses Windows `CreateSemaphore`, Apple GCD dispatch semaphores, or POSIX semaphores.  
+
+4. **Queues (`queue.h` / `queue.c`)**  
+   - Thread-safe FIFO queue.  
+   - Multiple producers/consumers can safely push/pop data.  
+
+5. **UTF-8 Strings (`string_utf8.h` / `string_utf8.c`)**  
+   - Manages dynamic strings with byte-length and UTF-8 codepoint count.  
+   - Validates UTF-8, strips BOM, handles CRLF, etc.  
+
+6. **Additional Containers (`containers.h` / `containers.c`)**  
+   - **Dynamic Array**  
+   - **Hash Table** (string -> `void*`)  
+   - **Red-Black Tree** (int -> `void*`)  
+   - **Generic HashSet** (supporting custom hash/equality)
 
 ---
 
@@ -30,20 +58,32 @@ This repository provides an **extended C99 library** that offers both a **thread
 ├── LICENSE                # MIT License
 ├── configure              # Script to detect compiler & generate Makefile
 ├── README.md              # This README
+├── DOC.md                 # Detailed documentation / reference
 ├── c99extend/
-│   ├── queue.c           # Queue implementation
-│   ├── queue.h           # Queue header
-│   ├── string_utf8.c     # UTF-8 string library implementation
-│   └── string_utf8.h     # UTF-8 string library header
+│   ├── adv_semaphore.c
+│   ├── adv_semaphore.h    # Cross-platform semaphore
+│   ├── adv_thread.c
+│   ├── adv_thread.h       # Cross-platform Thread abstraction (POSIX/Win)
+│   ├── containers.c
+│   ├── containers.h       # Additional data structures (DynArray, HashTable, etc.)
+│   ├── queue.c
+│   ├── queue.h            # Thread-safe FIFO queue
+│   ├── string_utf8.c
+│   ├── string_utf8.h      # UTF-8 string library header
+│   ├── thread_pool.c
+│   ├── thread_pool.h      # Thread pool interface
 ├── tests/
-│   ├── queue_test.c      # Test code for queue usage
-│   └── string_utf8_test.c# Test code for the UTF-8 string library
+│   ├── containers_test.c  # Test code for containers
+│   ├── queue_test.c       # Test code for queue usage
+│   ├── string_utf8_test.c # Test code for the UTF-8 string library
+│   ├── test_main.c        # Test code for threads and queue usage
+│   └── thread_pool_test.c # Test code for thread pool
 └── test_files/
-    ├── test_utf8_bom.txt   # UTF-8 file with BOM
-    └── test_utf8_nobom.txt # UTF-8 file without BOM
+    ├── test_utf8_bom.txt   # UTF-8 text file with BOM
+    └── test_utf8_nobom.txt # UTF-8 text file without BOM
 ```
 
-After running the `configure` script, a `Makefile` is generated at the root level for convenient building.
+**Note**: After running the `configure` script, a `Makefile` is generated at the root level for convenient building.
 
 ---
 
@@ -66,78 +106,105 @@ After running the `configure` script, a `Makefile` is generated at the root leve
    make
    ```
    - Produces the static library **`libc99extend.a`**.  
-   - Builds the test executables **`queue_test`** and **`string_utf8_test`** (unless excluded).
+   - Builds test executables (e.g. `queue_test`, `string_utf8_test`, `containers_test`) unless excluded.
 
 4. **Run Tests**  
    ```bash
    make run
    ```
-   or
+   or run individual binaries like:
    ```bash
-   ./queue_test
-   ./string_utf8_test
+   ./testbin/queue_test
+   ./testbin/string_utf8_test
+   ./testbin/containers_test
    ```
    Demonstrates:
-   - Queue usage (push/pop, thread-safety example if adapted).  
-   - UTF-8 string operations: BOM removal, codepoint counting, invalid byte detection, etc.
+   - Queue usage (thread-safe push/pop).  
+   - UTF-8 string operations (BOM handling, invalid bytes, etc.).  
+   - Additional data structures like dynamic array, hash table, or hash set.
 
 5. **Clean**  
    ```bash
    make clean
    ```
-   Removes build outputs (objects, library, tests) and the generated `Makefile`.
+   Removes compiled objects, the static library, test executables, and the generated `Makefile`.
 
 ---
 
 ## Using c99extend in Your Project
 
-1. **Include the library**  
-   - Either copy `queue.h/queue.c` and `string_utf8.h/string_utf8.c` into your project.  
-   - Or link against `libc99extend.a`.
-
-2. **Usage Examples**  
-   **Queue**  
-   ```c
-   #include "queue.h"
-
-   int main(void) {
-       Queue* q = queue_create();
-       int x = 42;
-       queue_push(q, &x);
-       int* popped = (int*)queue_pop(q);
-       queue_destroy(q);
-       return 0;
-   }
-   ```
-
-   **UTF-8 String**  
-   ```c
-   #include "string_utf8.h"
-
-   int main(void) {
-       String s = str_from_cstr("Hello, World!");
-       if (str_preflight_utf8(&s)) {
-           printf("'%s' is valid UTF-8\n", str_data(&s));
-       }
-       str_free(&s);
-       return 0;
-   }
-   ```
-
-3. **Compile/Link**  
+1. **Include** the relevant headers/source or use the static library.  
+2. **Compile/Link**:  
    ```bash
    gcc -std=c99 main.c queue.c string_utf8.c -o my_app
    ```
-   or, if using the static library:
+   or:
    ```bash
-   gcc -std=c99 main.c -L. -lc99extend -o my_app
+   gcc -std=c99 main.c -Lc99extend -lc99extend -o my_app
    ```
+   (Ensure `-pthread` if needed for threading.)
+
+3. **Examples**:  
+   - **Queue**  
+     ```c
+     #include "queue.h"
+
+     int main(void) {
+         Queue* q = queue_create();
+         int x = 42;
+         queue_push(q, &x);
+         int* popped = (int*)queue_pop(q);
+         // ...
+         queue_destroy(q);
+         return 0;
+     }
+     ```
+   - **UTF-8 String**  
+     ```c
+     #include "string_utf8.h"
+
+     int main(void) {
+         String s = str_from_cstr("Hello, UTF-8!");
+         if (str_preflight_utf8(&s)) {
+             printf("Valid: '%s'\n", str_data(&s));
+         }
+         str_free(&s);
+         return 0;
+     }
+     ```
+   - **Thread Pool**  
+     ```c
+     #include "thread_pool.h"
+
+     static void my_task(void* arg) {
+         int num = *(int*)arg;
+         printf("Task %d\n", num);
+     }
+
+     int main(void) {
+         ThreadPool* pool = thread_pool_create(4);
+         int x = 100;
+         thread_pool_submit(pool, my_task, &x);
+         // ...
+         thread_pool_destroy(pool);
+         return 0;
+     }
+     ```
+
+---
+
+## Documentation
+
+Click the badge below to view the **[DOC.md](DOC.md)** file, which provides a more in-depth explanation of each header, data structure, and API.
+
+[![DOC Reference](https://img.shields.io/badge/DOC-Reference-blue)](DOC.md)
 
 ---
 
 ## License
 
-This project is released under the [MIT License](LICENSE), allowing free use, modification, and distribution under its conditions.
+This project is released under the [MIT License](LICENSE).  
+You are free to use, modify, and distribute this software under the conditions described in the license file.
 
 ---
 
@@ -145,5 +212,3 @@ This project is released under the [MIT License](LICENSE), allowing free use, mo
 
 - **Author**: Vladislav Tislenko (keklick1337)  
 - **Year**: 2025  
-
-Happy coding with **c99extend**!
