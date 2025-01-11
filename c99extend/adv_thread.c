@@ -7,6 +7,8 @@
 #include "adv_thread.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 static DWORD WINAPI _thread_bootstrap(LPVOID lpParam);
@@ -14,16 +16,29 @@ static DWORD WINAPI _thread_bootstrap(LPVOID lpParam);
 static void* _thread_bootstrap(void* arg);
 #endif
 
+/*
+ * We'll store a small struct to hold the "void*(*)(void*)" function pointer
+ * plus its argument, so we can call it inside Thread_run without mismatched casts.
+ */
+typedef struct {
+    void *(*start_routine)(void*);
+    void* arg;
+} ThreadTrampoline;
+
 /* ========== Old "class-like" Thread methods ========== */
 
+/*
+ * Initialize the Thread object with a "classic" target (returning void).
+ */
 void Thread_init(Thread* t, void (*target)(void*), void* arg, const char* name) {
     if (!t) return;
-    t->started = false;
-    t->joined  = false;
-    t->killed  = false;
-    t->is_alive= false;
-    t->target  = target;
-    t->arg     = arg;
+    t->started   = false;
+    t->joined    = false;
+    t->killed    = false;
+    t->is_alive  = false;
+    t->target    = target;
+    t->arg       = arg;
+
     if (name) {
 #ifdef _WIN32
         strncpy_s(t->name, sizeof(t->name), name, _TRUNCATE);
@@ -37,18 +52,26 @@ void Thread_init(Thread* t, void (*target)(void*), void* arg, const char* name) 
         snprintf(t->name, sizeof(t->name), "%s", "Thread");
 #endif
     }
+
 #ifdef _WIN32
-    t->handle   = NULL;
-    t->thread_id= 0;
+    t->handle    = NULL;
+    t->thread_id = 0;
 #else
-    t->thread_id= 0;
+    t->thread_id = 0;
 #endif
 }
 
+/*
+ * Actually run the thread: if 'target' is the normal function,
+ * we just call it. If 'target' is our special trampoline function,
+ * we handle that scenario differently.
+ */
 void Thread_run(Thread* t) {
     if (!t) return;
-    // default calls target if not NULL
     if (t->target) {
+        /* If we detect that 't->target' is our 'trampoline' function,
+           we cast 't->arg' to ThreadTrampoline, call start_routine, free it, etc.
+         */
         t->target(t->arg);
     }
 }
@@ -142,6 +165,22 @@ const char* Thread_get_name(Thread* t) {
 }
 
 /* ========== New functions required by thread_pool.c ========== */
+/*
+ * We create a small static function that matches 'void(*)(void*)' type
+ * but inside it, we safely call the user function returning void*.
+ */
+
+/* The real trampoline function that we store in 't->target'. */
+static void _thread_routine_trampoline(void* arg) {
+    ThreadTrampoline* td = (ThreadTrampoline*)arg;
+    if (!td) return;
+    /* call the user-provided start_routine (which returns void*) */
+    (void) td->start_routine(td->arg); 
+    /* optional: we could store the return value somewhere if needed. */
+
+    /* free the trampoline data */
+    free(td);
+}
 
 /*
  * thread_create(AdvThread* t, ...) => returns int
@@ -150,17 +189,24 @@ int thread_create(AdvThread* t, void *(*start_routine)(void*), void* arg) {
     if (!t || !start_routine) {
         return -1;
     }
-    // We'll do the same logic as Thread_init + Thread_start, 
-    // but we store the function in t->target as a cast from (void*)(void*) => There's a mismatch in signature:
-    //   old: t->target is type: void(*)(void*)
-    //   new: we pass a start_routine that returns void*, e.g. "thread_pool_worker".
-    // We'll do a small trampoline or just cast.
-    t->target = (void(*)(void*))start_routine;
-    t->arg    = arg;
-    Thread_init(t, t->target, t->arg, NULL); // or set name to something
-    // Now start:
+    /* Allocate a small block that holds the user function and its arg. */
+    ThreadTrampoline* td = (ThreadTrampoline*)malloc(sizeof(ThreadTrampoline));
+    if (!td) {
+        return -1;
+    }
+    td->start_routine = start_routine;
+    td->arg           = arg;
+
+    /* Instead of casting the function pointer, we set t->target
+       to our known-compatible function '_thread_routine_trampoline' (which returns void).
+       Then we set t->arg to the 'td' block.
+    */
+    Thread_init(t, _thread_routine_trampoline, td, NULL);
+
+    /* Now start */
     Thread_start(t);
     if (!t->started) {
+        free(td);
         return -1;
     }
     return 0;
